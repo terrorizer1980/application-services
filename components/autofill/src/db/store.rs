@@ -6,6 +6,7 @@ use crate::db::models::address::{Address, UpdatableAddressFields};
 use crate::db::models::credit_card::{CreditCard, UpdatableCreditCardFields};
 use crate::db::{addresses, credit_cards, AutofillDb};
 use crate::error::*;
+use interrupt_support::NeverInterrupts;
 use rusqlite::{
     types::{FromSql, ToSql},
     Connection,
@@ -14,6 +15,7 @@ use sql_support::{self, ConnExt};
 use std::cell::RefCell;
 use std::path::Path;
 use std::sync::{Arc, Mutex, Weak};
+use sync15::{sync_multiple, telemetry, KeyBundle, MemoryCachedState, Sync15StorageClientInit};
 use sync15_traits::SyncEngine;
 use sync_guid::Guid;
 
@@ -126,6 +128,59 @@ impl Store {
 
     pub fn create_addresses_sync_engine(&self) -> Box<dyn SyncEngine> {
         Box::new(crate::sync::address::create_engine(self.store_impl.clone()))
+    }
+
+    pub fn sync(
+        &self,
+        storage_init: &Sync15StorageClientInit,
+        root_sync_key: &KeyBundle,
+        engine_name: &str,
+        meta_key_name: &str,
+    ) -> Result<telemetry::SyncTelemetryPing> {
+        let engine: Box<dyn SyncEngine> = if engine_name == "addresses" {
+            Box::new(crate::sync::address::create_engine(self.store_impl.clone()))
+        } else {
+            let e = Box::new(crate::sync::credit_card::create_engine(
+                self.store_impl.clone(),
+            ));
+            e.set_local_encryption_key(self.get_encryption_key(meta_key_name)?.as_str()).unwrap();
+            e
+        };
+        let engines_to_sync: Vec<&dyn SyncEngine> = vec![engine.as_ref()];
+        let mut mem_cached_state = MemoryCachedState::default();
+
+        let mut sync_result = sync_multiple(
+            engines_to_sync.as_slice(),
+            &mut None,
+            &mut mem_cached_state,
+            storage_init,
+            root_sync_key,
+            &NeverInterrupts,
+            None,
+        );
+
+        if let Err(e) = sync_result.result {
+            return Err(e.into());
+        }
+        match sync_result.engine_results.remove(engine_name) {
+            None | Some(Ok(())) => Ok(sync_result.telemetry),
+            Some(Err(e)) => Err(e.into()),
+        }
+    }
+
+    fn get_encryption_key(&self, meta_key_name: &str) -> Result<String> {
+        let key: Option<String> = get_meta(&self.store_impl.db.lock().unwrap().writer, meta_key_name)?;
+        if let Some(key) = key {
+            return Ok(key);
+        }
+
+        // if !self.get_all_credit_cards()?.is_empty() {
+        //     return Err(Error::MissingEncryptionKey.into());
+        // }
+
+        let key = crate::encryption::create_key()?;
+        put_meta(&self.store_impl.db.lock().unwrap().writer, meta_key_name, &key)?;
+        Ok(key)
     }
 }
 

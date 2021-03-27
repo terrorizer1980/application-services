@@ -3,6 +3,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 use crate::Opts;
 use anyhow::Result;
+use autofill::db::store::Store as AutofillStore;
 use fxa_client::internal::{auth, config::Config as FxaConfig, FirefoxAccount};
 use logins::PasswordStore;
 use serde_json::json;
@@ -223,6 +224,7 @@ pub struct TestClient {
     pub fxa: fxa_client::internal::FirefoxAccount,
     pub test_acct: Arc<TestAccount>,
     // XXX do this more generically...
+    pub autofill_store: AutofillStore,
     pub logins_store: PasswordStore,
     pub tabs_store: TabsStore,
 }
@@ -266,6 +268,7 @@ impl TestClient {
         Ok(Self {
             fxa,
             test_acct: acct,
+            autofill_store: AutofillStore::new("./test-autofill-sync.db")?,
             logins_store: PasswordStore::new_in_memory(None)?,
             tabs_store: TabsStore::new(),
         })
@@ -307,6 +310,7 @@ impl TestClient {
 
     pub fn fully_reset_local_db(&mut self) -> Result<()> {
         // Not great...
+        self.autofill_store = AutofillStore::new("./test-autofill-sync.db")?;
         self.logins_store = PasswordStore::new_in_memory(None)?;
         self.tabs_store = TabsStore::new();
         Ok(())

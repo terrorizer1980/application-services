@@ -7,6 +7,9 @@ use interrupt_support::Interrupted;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error synchronizing: {0}")]
+    SyncAdapterError(#[from] sync15::Error),
+
     #[error("Error executing SQL: {0}")]
     SqlError(#[from] rusqlite::Error),
 

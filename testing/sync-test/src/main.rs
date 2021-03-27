@@ -8,6 +8,7 @@ use std::{collections::HashSet, process};
 use structopt::StructOpt;
 
 mod auth;
+mod autofill;
 mod logins;
 mod sync15;
 mod tabs;
@@ -130,9 +131,10 @@ pub fn main() {
     run_test_groups(
         &opts,
         vec![
-            crate::logins::get_test_group(),
-            crate::tabs::get_test_group(),
-            crate::sync15::get_test_group(),
+            // crate::logins::get_test_group(),
+            // crate::tabs::get_test_group(),
+            // crate::sync15::get_test_group(),
+            crate::autofill::get_test_group(),
         ],
     );
 
